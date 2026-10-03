@@ -1,0 +1,56 @@
+# Secrets
+.secrets/
+secrets/*
+.env
+.env.*
+!.env.example
+firebase-service-account*.json
+*-service-account.json
+
+# Personal config
+.claude.json
+.zsh_history
+.bash_history
+.python_history
+.zcompdump
+.sudo_as_admin_successful
+
+# Caches / build artifacts
+.cache/
+.npm/
+.bun/
+.gstack/
+node_modules/
+
+# Tool config (machine-specific)
+.config/
+.cursor/
+.codex/
+.agents/
+.gemini/
+.local/
+
+# Shell rc files
+.bashrc
+.bash_logout
+.profile
+.zshrc
+.kshrc
+.tcshrc
+.claude/skills/gstack/
+.gbrain-source
+
+# --- Local-only scaffold and agent files -------------------------------------
+# This repo is PUBLIC. These paths are plugbase scaffolding and agent config
+# and must never be tracked. Add a path here BEFORE creating anything internal.
+/CLAUDE.md
+/.claude/
+/plans/
+/documentation/
+/sop/
+/scripts/
+/docs/designs/
+/skills-lock.json
+/.env.example
+/.initialized
+# Keep this section LAST: a later "!" rule above would otherwise re-include a path.
