@@ -297,6 +297,21 @@ Mentor file rules (anything else is a schema violation):
 - `contact.email`: required, string. `contact.booking_url`: optional string.
 
 All mentors in the shipped file are invented. Contact data uses `example.org`.
+The shipped demo roster has exactly three mentors and together they cover
+all 8 categories:
+
+| id | name | profile | `categories` | `stages` |
+|---|---|---|---|---|
+| `m-001` | Mara Lindqvist | Former founder: built and sold a B2B SaaS company, raised pre-seed to Series A | `fundraising`, `go_to_market`, `product`, `pivot_strategy` | `idea`, `pre_seed`, `seed` |
+| `m-002` | Jonas Albrecht | Legal expert: startup lawyer for financing rounds, cap tables, ESOPs and employment contracts | `legal_cap_table`, `fundraising`, `hiring` | `pre_seed`, `seed`, `series_a_plus` |
+| `m-003` | Helena Brandt | Long-time CEO of a large industrial company: industry knowledge, management and leadership, corporate sales | `leadership_team`, `hiring`, `go_to_market`, `other` | `seed`, `series_a_plus` |
+
+Each has a one-line `focus` matching the profile and `contact.email`
+`<first name>@example.org` with a `booking_url` on `example.org`. With this
+roster a seed-stage fundraising question returns Mara and Jonas tied, so the
+demo shows the shortlist; a cap-table question returns Jonas only; a
+leadership question returns Helena only. Tie, cap-of-3 and no-match tests use
+their own invented fixture rosters, not this file.
 For a real founder test, `FUTURY_MENTORS_PATH` points at a roster of mentors
 who agreed to be listed, saved outside the clone; it never enters the repo
 (`.gitignore` also excludes `mentors.local.json` as a backstop).
