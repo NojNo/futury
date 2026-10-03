@@ -87,7 +87,9 @@ Units, each testable on its own:
 - **Intro** (`src/intro.ts`): pure function building `draft_intro` from the
   template in §5.2.
 - **Report** (`src/report.ts`, run as `npm run report`): pure summary of a
-  profile plus a thin CLI that prints it.
+  profile plus a thin CLI that prints it. The CLI part runs only when the
+  file is the main module, so tests import the summary function without
+  side effects.
 
 ## 5. Tools
 
@@ -106,8 +108,8 @@ Input:
 | `stage_hint` | enum `Stage` | no |
 | `key_facts` | string[] (e.g. "team of 3", "runway 6 months") | no |
 
-Behaviour: append `{type: "interaction", timestamp, question, topic,
-stage_hint, key_facts}` to `profile.json`. Returns `{ok: true, entries: <count>}`,
+Behaviour: append `{type: "interaction", v: 1, timestamp, question, topic,
+stage_hint, key_facts}` to `profile.json` (schema in §7). Returns `{ok: true, entries: <count>}`,
 where `count` is the total number of entries in `profile.json`.
 
 ### 5.2 `find_mentor` (Escalation)
@@ -249,14 +251,18 @@ Deterministic scoring over the mentor list:
 - A mentor with no category match is never returned.
 - Candidates are sorted by score, ties in file order, and the top 3 are
   returned. The host chooses among them using the founder's details (§5.2),
-  so equally scored mentors all get suggested rather than only the first.
+  so equally scored mentors beyond the first get suggested too. Known limit:
+  with four or more equally scored mentors, file order still drops the ones
+  after the third; accepted for v1 rosters of a few mentors.
 - `fallback_used` (per candidate) is `true` only when a stage is known and
   that mentor does not cover it; `false` when the stage matches or is
   unknown.
 
 Stage resolution: the `stage` input if given; otherwise the latest
 `stage_hint` among `interaction` entries in the profile; otherwise unknown.
-A missing or malformed profile means unknown; matching continues.
+A missing, malformed or unreadable (e.g. `EACCES`) profile means unknown;
+matching continues, and the problem is reported through `profile_logged:
+false` and `profile_error` when the recommendation append also fails.
 
 `reason` format: `"<category label>, <stage label without article>: <focus>"`
 when the stage is known and matched, `"<category label>: <focus>"`
@@ -267,7 +273,12 @@ otherwise. Example: `"fundraising, seed-stage: Led two Series A rounds in deep t
 `mentors.json` ships in the repo at `data/mentors.json`. The default path is
 resolved from the package root via `import.meta.url`, never from the working
 directory (clients start stdio servers in arbitrary directories).
-`FUTURY_MENTORS_PATH` overrides it.
+`FUTURY_MENTORS_PATH` overrides it. `FUTURY_MENTORS_PATH` and `FUTURY_HOME`
+must be absolute paths; a relative value is rejected with a tool error naming
+the variable, since it would resolve against an unpredictable working
+directory. The mentor file is read on every `find_mentor` and `list_mentors`
+call, not cached, so a roster swap takes effect without restarting the
+client.
 
 ```json
 [{"id": "m-001", "name": "Invented Name", "focus": "one line",
@@ -292,16 +303,25 @@ who agreed to be listed, saved outside the clone; it never enters the repo
 
 `profile.json` lives in `FUTURY_HOME` (default: `path.join(os.homedir(),
 ".futury")`), never in the repo. It stays on the founder's machine; the
-server sends it nowhere. Shape: a JSON array of entries, each either
-`{type: "interaction", ...}` (§5.1) or `{type: "recommendation", ...}` (§5.2).
-Malformed means: invalid JSON, a top level that is not an array, or an entry
-that fails its schema.
+server sends it nowhere. Shape: a JSON array of entries. One zod
+discriminated union on `type` (`src/profile.ts`) is used for writing, reading
+and the report, so every module agrees on what is valid:
+
+| Entry | Required fields | Optional |
+|---|---|---|
+| `interaction` | `type`, `v` (literal 1), `timestamp` (ISO 8601 string, `Date.parse` valid), `question` (string, ≤500), `topic` (`ChallengeCategory`) | `stage_hint` (`Stage`), `key_facts` (string[], ≤10 × ≤200) |
+| `recommendation` | `type`, `v` (literal 1), `timestamp`, `challenge_category`, `stage` (`Stage` or `null`), `candidates` (array, ≤3, of `{mentor_id: string, mentor_name: string}`) | none |
+
+Unknown keys are ignored (kept on disk, not used). Malformed means: invalid
+JSON, a top level that is not an array, or an entry that fails this union,
+including an unsupported `v`.
 
 Writes are read, append, write to a uniquely named temp file
 (`profile.json.<pid>.<random>.tmp`) in the same directory, then rename. On a
 failed write the temp file is removed. `FUTURY_HOME` is created with mode
 0700 and `profile.json` with mode 0600, since it holds the founder's business
-questions. Within one process appends are queued (§4). Two separate sessions
+questions. Within one process appends are queued (§4); a failed append
+rejects only its own call, and the queue continues with the next one. Two separate sessions
 writing at the same moment (Claude Code and Desktop) can still lose one
 entry; last write wins across processes, and that is accepted for v1.
 
@@ -314,16 +334,15 @@ characters each. Longer input returns `isError: true` naming the field.
 
 ## 8. Error handling
 
-- Invalid tool input: tools are registered with their real zod schemas,
-  enums as `z.enum`, so the schema advertised to the host model lists every
-  allowed `ChallengeCategory` and `Stage` value. The MCP SDK version is pinned
-  in `package.json`. An integration test checks that an invalid call comes
-  back as a tool result with `isError: true` naming the field. If the pinned
-  SDK instead returns a protocol error, the fields are registered as
-  `z.unknown()` with the allowed values listed in each field's
-  `.describe()` text, and each handler parses strictly and returns
-  `isError: true` itself. Either way, the advertised schema or description
-  contains the enum values (also covered by a test).
+- Invalid tool input: tools are registered with their real zod schemas
+  (types, required fields, enums as `z.enum`, length limits), so `tools/list`
+  advertises the full contract to the host model. The MCP SDK and a zod
+  version it supports are pinned in `package.json`; the current SDK returns
+  schema failures as tool results with `isError: true` naming the field
+  (typescript-sdk issue #2879). Tests check both: an invalid call returns
+  `isError: true`, and the `tools/list` JSON Schema of each tool has the
+  expected types, required fields and enum values. If a future SDK upgrade
+  changes either, the upgrade is not taken until the tests pass again.
 - Missing or malformed `mentors.json`: `find_mentor` and `list_mentors` return
   a tool error with the path; `log_interaction` keeps working.
 - Malformed `profile.json`: `log_interaction` returns a tool error naming the
@@ -349,6 +368,9 @@ routes requests:
 2. Build/ship blocker in the founder's own product: use the matching gstack skill.
 3. Needs human judgment or experience: `find_mentor`, then `log_interaction`.
 
+Separately from the routing, every substantive question (whichever rung
+answers it) gets a `log_interaction` call; only small talk is skipped.
+
 On non-Claude-Code clients only the Futury half is available.
 
 ## 10. Testing
@@ -356,9 +378,11 @@ On non-Claude-Code clients only the Futury half is available.
 - Matcher: unit tests for category match, stage ranking, fallback (stage
   known and unmatched), unknown stage (`fallback_used: false`), no match,
   `reason` format, shortlist capped at 3 in score-then-file order, fewer than
-  3 matches returns only those, equally scored mentors all appear.
+  3 matches returns only those, 2-3 equally scored mentors all appear, 4
+  equally scored mentors return the first 3 in file order (documented limit).
 - ProfileStore: 20 parallel appends in one process all land (queue); a
-  failed write leaves no temp file and the original untouched; new files get
+  failed write leaves no temp file and the original untouched; after a failed
+  append the next append still succeeds (queue not stuck); new files get
   modes 0700/0600; every entry has `v: 1`; injected clock for timestamps (no
   real time in tests).
 - Input limits: 501-character `question`/`notes` and an 11-item `key_facts`
@@ -369,12 +393,24 @@ On non-Claude-Code clients only the Futury half is available.
   lookup from `interaction` entries only,
   malformed file (each malformed case in §7) is left untouched.
 - MentorDirectory: valid file, empty array, missing file, each schema rule in
-  §7, default path resolved independent of the working directory.
+  §7, default path resolved independent of the working directory, relative
+  `FUTURY_MENTORS_PATH`/`FUTURY_HOME` rejected, an edit to the mentor file is
+  seen by the next call without a restart.
+- Profile schema: every entry the server writes passes the shared union;
+  entries with a bad timestamp, a missing required field, `v: 2` or more than
+  3 candidates are malformed; unknown keys are accepted.
+- Stdio smoke test: spawn `node <absolute path>/dist/server.js` from an
+  unrelated temp working directory with a temp `FUTURY_HOME`, complete MCP
+  initialization over stdio, call `find_mentor`, and assert nothing but
+  protocol messages appears on stdout.
+- Unreadable profile (mode 000): `find_mentor` with and without `stage`
+  still returns candidates, with `profile_logged: false`.
 - Server: integration test with the SDK's in-memory client/server transport,
   calling all three tools end to end against a temp `FUTURY_HOME` and a
-  fixture mentor file; invalid input returns `isError: true`; the listed
-  tool schemas or descriptions contain every `ChallengeCategory` and `Stage`
-  value;
+  fixture mentor file; invalid input returns `isError: true` naming the
+  field; each tool's `tools/list` JSON Schema has the expected types,
+  required fields, length limits and every `ChallengeCategory` and `Stage`
+  enum value;
   `log_interaction` works with a missing mentor file; `log_interaction`
   returns a tool error on a malformed profile; `find_mentor` returns a tool
   error on a missing or malformed mentor file; `find_mentor` uses the
@@ -392,8 +428,10 @@ On non-Claude-Code clients only the Futury half is available.
   mentor-worthy). At most 1 of 10 may be handled wrongly; more means rewording
   the tool descriptions. After any rewording, run a second, held-out set of
   10 questions (never used for tuning) in fresh sessions; the same 1-of-10
-  limit applies. Check separately that substantive questions produce a
-  `log_interaction` entry (via `npm run report`). Then ask "which mentors are
+  limit applies. Check logging separately by opening `profile.json`: each
+  substantive question, including ones answered without a mentor, has
+  exactly one `interaction` entry with a plausible `topic` and `stage_hint`;
+  small talk has none. Then ask "which mentors are
   there?" and check that `list_mentors` is called.
 
 All fixtures are invented.
