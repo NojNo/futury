@@ -2446,7 +2446,18 @@ git commit -m "docs: record v1 acceptance results"
 
 ## Host check log
 
-(Task 2 Step 12: per client, which tools each of the six questions called, and the gate decision.)
+2026-10-03, Claude Code 2.1.288 headless in the sandbox (`claude -p --setting-sources project --disable-slash-commands --strict-mcp-config`, routing snippet via `--append-system-prompt-file`, model claude-opus-5, skeleton at 76055a9):
+
+| # | Tools called | Pass |
+|---|---|---|
+| 1 | none | yes |
+| 2 | log_interaction (go_to_market) | yes |
+| 3 | find_mentor (fundraising, stage seed, first-person notes) + log_interaction (stage_hint seed, key_facts); picked one candidate with a reason, showed intro unchanged, asked for name/startup | yes |
+| 4 | find_mentor (pivot_strategy) + log_interaction | yes |
+| 5 | list_mentors | yes |
+| 6 | log_interaction (legal_cap_table), no find_mentor | yes |
+
+Gate: passed for Claude Code; tool contract unchanged. Claude Desktop not tested here (no GUI in the sandbox); it is covered in Task 9.
 
 ## Acceptance log
 
