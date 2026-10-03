@@ -2461,4 +2461,10 @@ Gate: passed for Claude Code; tool contract unchanged. Claude Desktop not tested
 
 ## Acceptance log
 
-(Task 9: per client, tuning-set result, held-out result, logging check, awareness check.)
+2026-10-03, Claude Code 2.1.288 headless in the sandbox (same flags as the host check, one fresh session per question, fresh `FUTURY_HOME`, real server at f122bfa):
+
+- Tuning set: 10/10 correct. Q1-5 no `find_mentor` (Q4 no tool); Q6-10 `find_mentor` with the expected topic (fundraising/pre_seed, hiring/seed, leadership_team, pivot_strategy, go_to_market/seed). No description rewording needed, so the held-out set was not required (spec §10: only after rewording).
+- Logging: 9/10 substantive questions logged; "What does ARR mean?" not logged (1 miss, within the limit); small talk none. `profile.json` mode 600, folder 700; `npm run report` output correct.
+- Awareness: "Which mentors are there?" → `list_mentors`. "Who could help me with hiring?" → `find_mentor` (hiring) instead of `list_mentors`; it still surfaces the right mentors with intros. Noted, not counted as a failure.
+- Sample answer (VP Sales question): picked Helena with a reason, explained why not Jonas, showed the intro with the founder's notes, gave contact and booking link.
+- Claude Desktop: not tested (no GUI in the sandbox); open for the user.
