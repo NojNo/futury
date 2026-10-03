@@ -43,7 +43,7 @@ OpenAI clients, CLI agents). v1 ships the first capability only:
 | Profile building | Host model fills a structured schema; server only stores it. No server-side LLM. |
 | Licence | MIT, open source. |
 | Language | TypeScript on the official MCP TypeScript SDK, tests in Vitest. |
-| Install | Clone, `npm install`, `npm run build`, then `claude mcp add` or the Claude Desktop JSON config. No npm publishing, no `.mcpb` bundle in v1. |
+| Install | Clone, `npm install`, `npm run build`, then `claude mcp add` or the Claude Desktop JSON config. No npm publishing, no `.mcpb` bundle in v1. The README gives absolute paths for both `node` and `dist/server.js`, because Claude Desktop does not load the shell's PATH (a common failure with nvm). |
 | Test group | Technical founders. The `.mcpb` bundle is built when a non-technical founder is to install v1 without the builder present; a setup the builder does in person does not trigger it (see `docs/designs/founder-mentor-escalation.md`). |
 
 Why MCP and not a Claude Code skill: a skill runs only inside Claude Code and
@@ -71,10 +71,17 @@ npm run report ──► Report ──► reads profile.json, prints paste-ready
 Units, each testable on its own:
 
 - **server** (`src/server.ts`): registers the three tools, validates input,
-  maps results and errors to MCP tool results. No business logic.
+  maps results and errors to MCP tool results. No business logic. At startup
+  it logs one stderr line with the package version and the resolved
+  `FUTURY_HOME` and mentor-file paths, so a wrong roster path is visible in
+  the client's MCP log.
+- **Labels** (`src/labels.ts`): the single table of category and stage labels
+  (§5.5), used by Intro, Matcher's `reason` and Report.
 - **ProfileStore** (`src/profile.ts`): reads and appends profile entries
   (`interaction` and `recommendation`) with a temp-file-and-rename write
-  (§7), returns the latest known stage.
+  (§7), returns the latest known stage. Appends within one server process go
+  through a single in-process queue, so parallel tool calls (the host may call
+  `log_interaction` and `find_mentor` at once) never lose an entry.
 - **MentorDirectory** (`src/mentors.ts`): loads and validates the mentor file.
 - **Matcher** (`src/matcher.ts`): pure function, `(request, mentors) -> match | null`.
 - **Intro** (`src/intro.ts`): pure function building `draft_intro` from the
@@ -119,20 +126,30 @@ Input:
 | `stage` | enum `Stage` | no, falls back to latest `stage_hint` in the profile |
 | `notes` | string, short summary of the situation | no |
 
-Output on a match:
+The tool description tells the host to always pass `stage` when the
+conversation reveals the founder's current stage, so a stage change is used
+at once rather than an older `stage_hint` from the profile.
+
+Output: a ranked shortlist of up to 3 candidates (§6). The host picks the one
+that best fits what the founder actually said, using each candidate's
+`focus`, tells the founder why, and may mention the others.
 
 ```json
 {
-  "mentor": {"id": "m-003", "name": "...", "focus": "...", "contact": {"email": "...", "booking_url": "..."}},
-  "reason": "fundraising, seed-stage: Led two Series A rounds in deep tech",
-  "fallback_used": false,
-  "draft_intro": "Hi <mentor name>, I'm [your name] from [your startup], a seed-stage founder in the FUTURY network ...",
+  "candidates": [
+    {
+      "mentor": {"id": "m-003", "name": "...", "focus": "...", "contact": {"email": "...", "booking_url": "..."}},
+      "reason": "fundraising, seed-stage: Led two Series A rounds in deep tech",
+      "fallback_used": false,
+      "draft_intro": "Hi <mentor name>, I'm [your name] from [your startup], a seed-stage founder in the FUTURY network ..."
+    }
+  ],
   "profile_logged": true
 }
 ```
 
 `draft_intro` is a short English message the founder can send after filling
-in `[your name]` and `[your startup]`, returned only together with a mentor.
+in `[your name]` and `[your startup]`, one per candidate.
 The tool description tells the host to show it unchanged apart from asking
 the founder to fill those placeholders, to rewrite or translate it only when
 the founder asks, and to write `notes` as one first-person sentence suitable
@@ -145,29 +162,32 @@ for the intro. Template, in order:
 3. The topic as a fixed plain label per `ChallengeCategory` (for example
    `legal_cap_table` → "legal and cap table questions", `other` → "a question
    outside the usual topics").
-4. The founder's `notes` as one sentence, left out when absent.
+4. The founder's `notes` as one sentence, left out when absent or an empty
+   string.
 5. Why this mentor: their `focus`.
 6. A request for a short call.
 
 Output when nothing matches:
 
 ```json
-{"mentor": null, "reason": "No mentor covers <category label>", "fallback_used": false, "profile_logged": true}
+{"candidates": [], "reason": "No mentor covers <category label>", "profile_logged": true}
 ```
 
-No `draft_intro`. The host then answers on its own and can suggest the
-founder contact FUTURY directly.
+The host then answers on its own and can suggest the founder contact FUTURY
+directly.
 
 Recommendation log: after matching, `find_mentor` appends
-`{type: "recommendation", timestamp, challenge_category, stage, mentor_id,
-mentor_name}` to `profile.json`. `stage` is the resolved stage (§6) or `null`
-when unknown; `mentor_id` and `mentor_name` are `null` on a no-match. Every
-result, match or not, carries `profile_logged` (`true` when the append
-succeeded). When `find_mentor` returns a tool error (missing or malformed
-mentor file, invalid input), no recommendation entry is written. If the append fails
-(malformed or unwritable profile), the match is still returned with
-`profile_logged: false` and `profile_error` naming the file; a logging failure
-never hides a recommendation.
+`{type: "recommendation", v: 1, timestamp, challenge_category, stage,
+candidates: [{mentor_id, mentor_name}]}` to `profile.json`, in rank order.
+`stage` is the resolved stage (§6) or `null` when unknown; `candidates` is
+empty on a no-match. The server cannot know which candidate the host showed
+first; the check-in covers that. Every result, match or not, carries
+`profile_logged` (`true` when the append succeeded). When `find_mentor`
+returns a tool error (missing or malformed mentor file, invalid input), no
+recommendation entry is written. If the append fails (malformed or
+unwritable profile), the candidates are still returned with
+`profile_logged: false` and `profile_error` naming the file; a logging
+failure never hides a recommendation.
 
 ### 5.3 `list_mentors` (Awareness)
 
@@ -189,14 +209,14 @@ founder can paste to the builder, in this order:
 
 1. `Interactions: <n>` (count of `interaction` entries).
 2. `Recommendations: <n> (no match: <m>)` (count of `recommendation`
-   entries; `m` = those with `mentor_id: null`).
-3. `Mentors recommended:` one line per mentor, `<name>: <count>`, highest
-   count first, ties by name.
+   entries; `m` = those with empty `candidates`).
+3. `Mentors suggested:` one line per mentor, `<name>: <count>`, counting each
+   appearance in a shortlist, highest count first, ties by name.
 4. `Topics:` one line per category label, `<label>: <count>`, counting
    `interaction.topic` only (one per logged question; recommendations are
    already counted above), highest count first, ties by label.
 
-A section with nothing to list prints `none` (e.g. `Mentors recommended: none`).
+A section with nothing to list prints `none` (e.g. `Mentors suggested: none`).
 
 Missing profile: prints "No profile yet" and exits 0. Malformed profile (see
 §7): prints the path and exits 1; the file is not changed.
@@ -227,9 +247,12 @@ Deterministic scoring over the mentor list:
 - +2 if the mentor's `categories` contain `challenge_category`
 - +1 if the mentor's `stages` contain the stage (when a stage is known)
 - A mentor with no category match is never returned.
-- Highest score wins; ties go to the first mentor in file order.
-- `fallback_used` is `true` only when a stage is known and the chosen mentor
-  does not cover it; `false` when the stage matches or is unknown.
+- Candidates are sorted by score, ties in file order, and the top 3 are
+  returned. The host chooses among them using the founder's details (§5.2),
+  so equally scored mentors all get suggested rather than only the first.
+- `fallback_used` (per candidate) is `true` only when a stage is known and
+  that mentor does not cover it; `false` when the stage matches or is
+  unknown.
 
 Stage resolution: the `stage` input if given; otherwise the latest
 `stage_hint` among `interaction` entries in the profile; otherwise unknown.
@@ -274,9 +297,20 @@ server sends it nowhere. Shape: a JSON array of entries, each either
 Malformed means: invalid JSON, a top level that is not an array, or an entry
 that fails its schema.
 
-Writes are read, append, write to a temp file in the same directory, then
-rename. Two sessions writing at the same moment (Claude Code and Desktop) can
-lose one entry; last write wins, and that is accepted for v1.
+Writes are read, append, write to a uniquely named temp file
+(`profile.json.<pid>.<random>.tmp`) in the same directory, then rename. On a
+failed write the temp file is removed. `FUTURY_HOME` is created with mode
+0700 and `profile.json` with mode 0600, since it holds the founder's business
+questions. Within one process appends are queued (§4). Two separate sessions
+writing at the same moment (Claude Code and Desktop) can still lose one
+entry; last write wins across processes, and that is accepted for v1.
+
+Every entry carries `"v": 1` so a later profile format (see the parked LLM
+profile plan) can tell old entries apart without changing the array shape.
+
+Input limits, enforced by the strict input parse (§8): `question` and `notes`
+at most 500 characters, `key_facts` at most 10 items of at most 200
+characters each. Longer input returns `isError: true` naming the field.
 
 ## 8. Error handling
 
@@ -293,11 +327,16 @@ lose one entry; last write wins, and that is accepted for v1.
 - Missing or malformed `mentors.json`: `find_mentor` and `list_mentors` return
   a tool error with the path; `log_interaction` keeps working.
 - Malformed `profile.json`: `log_interaction` returns a tool error naming the
-  file. `find_mentor` still returns its match with `profile_logged: false`
+  file. `find_mentor` still returns its candidates with `profile_logged: false`
   and `profile_error` (§5.2). The server never overwrites or repairs it, so
   no founder data is lost.
 - Missing `FUTURY_HOME`: created on the first write.
 - The server writes logs to stderr only; stdout carries the MCP protocol.
+  Log lines name the tool, the error class and the file path, never the
+  founder's question, notes or key facts (client MCP logs are plain files).
+- An unexpected exception in a handler is returned as `isError: true` with
+  "internal error in <tool>" and logged as above; the server process keeps
+  running.
 
 ## 9. gstack pairing (documentation, no code)
 
@@ -314,9 +353,18 @@ On non-Claude-Code clients only the Futury half is available.
 
 ## 10. Testing
 
-- Matcher: unit tests for category match, stage tie-break, fallback (stage
+- Matcher: unit tests for category match, stage ranking, fallback (stage
   known and unmatched), unknown stage (`fallback_used: false`), no match,
-  `reason` format.
+  `reason` format, shortlist capped at 3 in score-then-file order, fewer than
+  3 matches returns only those, equally scored mentors all appear.
+- ProfileStore: 20 parallel appends in one process all land (queue); a
+  failed write leaves no temp file and the original untouched; new files get
+  modes 0700/0600; every entry has `v: 1`; injected clock for timestamps (no
+  real time in tests).
+- Input limits: 501-character `question`/`notes` and an 11-item `key_facts`
+  return `isError: true`; empty-string `notes` is treated as absent.
+- Logging: a handler error's stderr line contains the tool name and path but
+  not the founder's text.
 - ProfileStore: append, `FUTURY_HOME` created on first write, latest-stage
   lookup from `interaction` entries only,
   malformed file (each malformed case in §7) is left untouched.
@@ -330,20 +378,23 @@ On non-Claude-Code clients only the Futury half is available.
   `log_interaction` works with a missing mentor file; `log_interaction`
   returns a tool error on a malformed profile; `find_mentor` returns a tool
   error on a missing or malformed mentor file; `find_mentor` uses the
-  profile's stage when none is given.
-- Draft intro: present only with a mentor; correct with and without `notes`
-  and stage.
-- Recommendation log: match and no-match both appended; malformed profile
-  and unwritable profile both still return the match with
-  `profile_logged: false` and `profile_error`.
+  profile's stage when none is given; stage change: a profile `stage_hint` of
+  `pre_seed` plus a `find_mentor` call with `stage: seed` ranks by `seed`.
+- Draft intro: one per candidate; correct with and without `notes` and stage.
+- Recommendation log: match and no-match both appended with candidates in
+  rank order; malformed profile and unwritable profile both still return the
+  candidates with `profile_logged: false` and `profile_error`.
 - list_mentors: full list, category filter, empty result, missing mentor
   file returns a tool error.
 - Report: summary of a fixture profile; missing profile; malformed profile
   exits 1 and leaves the file unchanged.
 - Manual: in Claude Code and Claude Desktop, ask 10 questions (5 generic, 5
   mentor-worthy). At most 1 of 10 may be handled wrongly; more means rewording
-  the tool descriptions. Then ask "which mentors are there?" and check that
-  `list_mentors` is called.
+  the tool descriptions. After any rewording, run a second, held-out set of
+  10 questions (never used for tuning) in fresh sessions; the same 1-of-10
+  limit applies. Check separately that substantive questions produce a
+  `log_interaction` entry (via `npm run report`). Then ask "which mentors are
+  there?" and check that `list_mentors` is called.
 
 All fixtures are invented.
 
