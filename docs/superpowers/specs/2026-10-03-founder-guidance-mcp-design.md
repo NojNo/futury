@@ -42,7 +42,7 @@ OpenAI clients, CLI agents). v1 ships the first capability only:
 | Guidance | Produced by the host model, never by the server. |
 | Profile building | Host model fills a structured schema; server only stores it. No server-side LLM. |
 | Licence | MIT, open source. |
-| Language | TypeScript on the official MCP TypeScript SDK, tests in Vitest. |
+| Language | TypeScript on the official MCP TypeScript SDK, tests in Vitest. Runtime Node 24 LTS; CI also runs Node 22 (Node 20 reached end of life in April 2026). |
 | Install | Clone, `npm install`, `npm run build`, then `claude mcp add` or the Claude Desktop JSON config. No npm publishing, no `.mcpb` bundle in v1. The README gives absolute paths for both `node` and `dist/server.js`, because Claude Desktop does not load the shell's PATH (a common failure with nvm). |
 | Test group | Technical founders. The `.mcpb` bundle is built when a non-technical founder is to install v1 without the builder present; a setup the builder does in person does not trigger it (see `docs/designs/founder-mentor-escalation.md`). |
 
@@ -111,6 +111,11 @@ Input:
 Behaviour: append `{type: "interaction", v: 1, timestamp, question, topic,
 stage_hint, key_facts}` to `profile.json` (schema in §7). Returns `{ok: true, entries: <count>}`,
 where `count` is the total number of entries in `profile.json`.
+
+Logging is best-effort, not exactly-once: the host decides when to call the
+tool, so a substantive question can go unlogged, and a repeated call appends
+a duplicate. There is no interaction id in v1; the report counts entries as
+they are.
 
 ### 5.2 `find_mentor` (Escalation)
 
@@ -439,13 +444,21 @@ On non-Claude-Code clients only the Futury half is available.
   file returns a tool error.
 - Report: summary of a fixture profile; missing profile; malformed profile
   exits 1 and leaves the file unchanged.
+- Early host check, right after scaffolding and before storage work: register
+  the three tools with their real schemas but fixture responses, draft the
+  routing snippet (§9), and try a handful of questions in Claude Code and
+  Claude Desktop. If the host does not escalate, log or pick candidates as
+  intended, the tool contract is revisited before anything else is built.
+  Questions used here never go into the held-out set below.
 - Manual: in Claude Code and Claude Desktop, ask 10 questions (5 generic, 5
   mentor-worthy). At most 1 of 10 may be handled wrongly; more means rewording
   the tool descriptions. After any rewording, run a second, held-out set of
   10 questions (never used for tuning) in fresh sessions; the same 1-of-10
   limit applies. Check logging separately by opening `profile.json`: each
   substantive question, including ones answered without a mentor, has
-  exactly one `interaction` entry with a plausible `topic` and `stage_hint`;
+  an `interaction` entry with a plausible `topic` and `stage_hint` (logging
+  is best-effort, §5.1: note duplicates and misses; more than 1 miss in 10
+  means rewording the `log_interaction` description);
   small talk has none. Then ask "which mentors are
   there?" and check that `list_mentors` is called.
 
