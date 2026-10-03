@@ -35,7 +35,7 @@ export const RecommendationEntrySchema = z
     timestamp: Timestamp,
     challenge_category: ChallengeCategorySchema,
     stage: StageSchema.nullable(),
-    candidates: z.array(z.object({ mentor_id: z.string(), mentor_name: z.string() })).max(3),
+    candidates: z.array(z.object({ mentor_id: z.string(), mentor_name: z.string() }).passthrough()).max(3),
   })
   .passthrough();
 

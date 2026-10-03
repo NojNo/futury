@@ -75,6 +75,14 @@ describe("ProfileStore appends", () => {
     await s.appendInteraction(interaction);
     expect(JSON.parse(await readFile(s.path, "utf8"))[0].extra).toBe("kept");
   });
+
+  it("keeps unknown keys in recommendation candidates on disk", async () => {
+    const s = await store();
+    await mkdir(s.home, { recursive: true });
+    await writeFile(s.path, JSON.stringify([{ type: "recommendation", v: 1, timestamp: NOW.toISOString(), challenge_category: "hiring", stage: null, candidates: [{ mentor_id: "m-1", mentor_name: "M", note: "kept" }] }]));
+    await s.appendInteraction(interaction);
+    expect(JSON.parse(await readFile(s.path, "utf8"))[0].candidates[0].note).toBe("kept");
+  });
 });
 
 describe("ProfileStore failures", () => {
