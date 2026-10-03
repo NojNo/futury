@@ -4,7 +4,20 @@ import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { ChallengeCategorySchema, MAX_FACT, MAX_FACTS, MAX_TEXT, StageSchema } from "./labels.js";
+import { ConfigError, MentorFileError, ProfileFileError } from "./errors.js";
+import { buildIntro } from "./intro.js";
+import {
+  CATEGORY_LABELS,
+  ChallengeCategorySchema,
+  MAX_FACT,
+  MAX_FACTS,
+  MAX_TEXT,
+  StageSchema,
+  type Stage,
+} from "./labels.js";
+import { matchMentors } from "./matcher.js";
+import { loadMentors, resolveMentorsPath } from "./mentors.js";
+import { ProfileStore, resolveFuturyHome } from "./profile.js";
 
 export const VERSION: string = (
   JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }
@@ -40,28 +53,36 @@ export interface ServerDeps {
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
 const ok = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
+const fail = (text: string): ToolResult => ({ isError: true, content: [{ type: "text", text }] });
 
-// Canned responses for the early host check; Task 6 replaces them with real handlers.
-const FIXTURE_MENTORS = [
-  {
-    id: "m-001",
-    name: "Mara Lindqvist",
-    focus: "Built and sold a B2B SaaS company; raised from pre-seed to Series A",
-    categories: ["fundraising", "go_to_market", "product", "pivot_strategy"],
-    stages: ["idea", "pre_seed", "seed"],
-    contact: { email: "mara@example.org", booking_url: "https://example.org/book/mara" },
-  },
-  {
-    id: "m-002",
-    name: "Jonas Albrecht",
-    focus: "Startup lawyer for financing rounds, cap tables, ESOPs and employment contracts",
-    categories: ["legal_cap_table", "fundraising", "hiring"],
-    stages: ["pre_seed", "seed", "series_a_plus"],
-    contact: { email: "jonas@example.org", booking_url: "https://example.org/book/jonas" },
-  },
-];
+function where(error: unknown): string {
+  if (error instanceof ConfigError) return error.variable;
+  if (error instanceof MentorFileError || error instanceof ProfileFileError) return error.path;
+  return "";
+}
 
-export function createServer(_deps: ServerDeps = {}): McpServer {
+function logLine(tool: string, error: unknown): string {
+  const name = error instanceof Error ? error.name : "UnknownError";
+  return `futury: ${tool} ${name} ${where(error)}`.trimEnd();
+}
+
+async function guard(tool: string, log: (line: string) => void, run: () => Promise<ToolResult>): Promise<ToolResult> {
+  try {
+    return await run();
+  } catch (error) {
+    log(logLine(tool, error));
+    if (error instanceof ConfigError || error instanceof MentorFileError || error instanceof ProfileFileError) {
+      return fail(error.message);
+    }
+    return fail(`internal error in ${tool}`);
+  }
+}
+
+export function createServer(deps: ServerDeps = {}): McpServer {
+  const env = deps.env ?? process.env;
+  const now = deps.now ?? (() => new Date());
+  const log = deps.log ?? ((line: string) => void process.stderr.write(`${line}\n`));
+  const profile = (): ProfileStore => new ProfileStore(resolveFuturyHome(env), now);
   const server = new McpServer({ name: "futury", version: VERSION });
 
   server.registerTool(
@@ -80,7 +101,11 @@ export function createServer(_deps: ServerDeps = {}): McpServer {
           .describe('Short facts stated by the founder, e.g. "team of 3", "runway 6 months"'),
       },
     },
-    async () => ok({ ok: true, entries: 1 }),
+    (args) =>
+      guard("log_interaction", log, async () => {
+        const entries = await profile().appendInteraction(args);
+        return ok({ ok: true, entries });
+      }),
   );
 
   server.registerTool(
@@ -94,15 +119,52 @@ export function createServer(_deps: ServerDeps = {}): McpServer {
         notes: z.string().max(MAX_TEXT).optional().describe("One first-person sentence about the situation"),
       },
     },
-    async () =>
-      ok({
-        candidates: FIXTURE_MENTORS.map((m) => ({
-          mentor: { id: m.id, name: m.name, focus: m.focus, contact: m.contact },
-          reason: `fundraising, seed-stage: ${m.focus}`,
-          fallback_used: false,
-          draft_intro: `Hi ${m.name},\n\nI'm [your name] from [your startup], a seed-stage founder in the FUTURY network. I'm reaching out about fundraising.\n\nI'm writing to you because of your background: ${m.focus}.\n\nWould you have time for a short call in the coming weeks?\n\nBest,\n[your name]`,
-        })),
-        profile_logged: true,
+    (args) =>
+      guard("find_mentor", log, async () => {
+        const mentors = await loadMentors(resolveMentorsPath(env));
+        let stage: Stage | null = args.stage ?? null;
+        if (stage === null) {
+          try {
+            stage = await profile().latestStage();
+          } catch {
+            stage = null;
+          }
+        }
+        const matches = matchMentors(args.challenge_category, stage, mentors);
+        const candidates = matches.map((c) => ({
+          mentor: { id: c.mentor.id, name: c.mentor.name, focus: c.mentor.focus, contact: c.mentor.contact },
+          reason: c.reason,
+          fallback_used: c.fallback_used,
+          draft_intro: buildIntro({
+            mentorName: c.mentor.name,
+            mentorFocus: c.mentor.focus,
+            category: args.challenge_category,
+            stage,
+            notes: args.notes,
+          }),
+        }));
+        let profileLogged = true;
+        let profileError: string | undefined;
+        try {
+          await profile().appendRecommendation({
+            challenge_category: args.challenge_category,
+            stage,
+            candidates: matches.map((c) => ({ mentor_id: c.mentor.id, mentor_name: c.mentor.name })),
+          });
+        } catch (error) {
+          profileLogged = false;
+          profileError = error instanceof Error ? error.message : "profile not written";
+          log(logLine("find_mentor", error));
+        }
+        const body =
+          candidates.length > 0
+            ? { candidates }
+            : { candidates: [], reason: `No mentor covers ${CATEGORY_LABELS[args.challenge_category]}` };
+        return ok({
+          ...body,
+          profile_logged: profileLogged,
+          ...(profileError === undefined ? {} : { profile_error: profileError }),
+        });
       }),
   );
 
@@ -115,14 +177,39 @@ export function createServer(_deps: ServerDeps = {}): McpServer {
         challenge_category: ChallengeCategorySchema.optional().describe("Only list mentors covering this topic"),
       },
     },
-    async () => ok({ mentors: FIXTURE_MENTORS }),
+    (args) =>
+      guard("list_mentors", log, async () => {
+        const mentors = await loadMentors(resolveMentorsPath(env));
+        const category = args.challenge_category;
+        const listed = category === undefined ? mentors : mentors.filter((m) => m.categories.includes(category));
+        return ok({
+          mentors: listed.map((m) => ({
+            id: m.id,
+            name: m.name,
+            focus: m.focus,
+            categories: m.categories,
+            stages: m.stages,
+            contact: m.contact,
+          })),
+        });
+      }),
   );
 
   return server;
 }
 
+function describePath(resolve: () => string): string {
+  try {
+    return resolve();
+  } catch (error) {
+    return error instanceof ConfigError ? `invalid (${error.message})` : "invalid";
+  }
+}
+
 async function main(): Promise<void> {
-  process.stderr.write(`futury ${VERSION} (skeleton)\n`);
+  const home = describePath(() => resolveFuturyHome(process.env));
+  const mentors = describePath(() => resolveMentorsPath(process.env));
+  process.stderr.write(`futury ${VERSION} home=${home} mentors=${mentors}\n`);
   await createServer().connect(new StdioServerTransport());
 }
 
