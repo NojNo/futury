@@ -59,19 +59,28 @@ Founder ── AI client (v1: Claude Code / Claude Desktop; other clients are ro
                  │  and decides when to call a tool
                  ▼
          futury MCP server (stdio, local)
-           ├─ log_interaction ──► ProfileStore ──► $FUTURY_HOME/profile.json
-           └─ find_mentor ──────► Matcher ──────► mentors.json (mock)
-                                     └─ reads ProfileStore for the stage fallback
+           ├─ log_interaction ──► ProfileStore ──────────► $FUTURY_HOME/profile.json
+           ├─ find_mentor ──────► Matcher ──► Intro           ▲
+           │        │               └─ MentorDirectory ──► mentors.json (mock)
+           │        └─ appends recommendation ─► ProfileStore ┘ (also stage fallback)
+           └─ list_mentors ─────► MentorDirectory
+
+npm run report ──► Report ──► reads profile.json, prints paste-ready summary
 ```
 
 Units, each testable on its own:
 
-- **server** (`src/server.ts`): registers the two tools, validates input,
+- **server** (`src/server.ts`): registers the three tools, validates input,
   maps results and errors to MCP tool results. No business logic.
-- **ProfileStore** (`src/profile.ts`): reads and appends profile entries,
-  returns the latest known stage.
+- **ProfileStore** (`src/profile.ts`): reads and appends profile entries
+  (`interaction` and `recommendation`) with a temp-file-and-rename write
+  (§7), returns the latest known stage.
 - **MentorDirectory** (`src/mentors.ts`): loads and validates the mentor file.
 - **Matcher** (`src/matcher.ts`): pure function, `(request, mentors) -> match | null`.
+- **Intro** (`src/intro.ts`): pure function building `draft_intro` from the
+  template in §5.2.
+- **Report** (`src/report.ts`, run as `npm run report`): pure summary of a
+  profile plus a thin CLI that prints it.
 
 ## 5. Tools
 
@@ -90,8 +99,9 @@ Input:
 | `stage_hint` | enum `Stage` | no |
 | `key_facts` | string[] (e.g. "team of 3", "runway 6 months") | no |
 
-Behaviour: append `{timestamp, question, topic, stage_hint, key_facts}` to
-`profile.json`. Returns `{ok: true, entries: <count>}`.
+Behaviour: append `{type: "interaction", timestamp, question, topic,
+stage_hint, key_facts}` to `profile.json`. Returns `{ok: true, entries: <count>}`,
+where `count` is the total number of entries in `profile.json`.
 
 ### 5.2 `find_mentor` (Escalation)
 
@@ -114,9 +124,10 @@ Output on a match:
 ```json
 {
   "mentor": {"id": "m-003", "name": "...", "focus": "...", "contact": {"email": "...", "booking_url": "..."}},
-  "reason": "Seed-stage fundraising, led two Series A rounds in deep tech",
+  "reason": "fundraising, seed-stage: Led two Series A rounds in deep tech",
   "fallback_used": false,
-  "draft_intro": "Hi <mentor name>, I'm [your name] from [your startup], a seed-stage founder in the FUTURY network ..."
+  "draft_intro": "Hi <mentor name>, I'm [your name] from [your startup], a seed-stage founder in the FUTURY network ...",
+  "profile_logged": true
 }
 ```
 
@@ -128,8 +139,9 @@ the founder asks, and to write `notes` as one first-person sentence suitable
 for the intro. Template, in order:
 
 1. Greeting with the mentor's name.
-2. Who the founder is: "I'm [your name] from [your startup], a <stage>
-   founder in the FUTURY network", with the stage left out when unknown.
+2. Who the founder is: "I'm [your name] from [your startup], <stage label
+   with article> founder in the FUTURY network" (§5.5), or "..., a founder in
+   the FUTURY network" when the stage is unknown.
 3. The topic as a fixed plain label per `ChallengeCategory` (for example
    `legal_cap_table` → "legal and cap table questions", `other` → "a question
    outside the usual topics").
@@ -137,16 +149,76 @@ for the intro. Template, in order:
 5. Why this mentor: their `focus`.
 6. A request for a short call.
 
-Output when nothing matches: `{"mentor": null, "reason": "No mentor covers <category> at <stage>"}`.
-The host then answers on its own and can suggest the founder contact FUTURY directly.
+Output when nothing matches:
 
-### 5.3 Enums
+```json
+{"mentor": null, "reason": "No mentor covers <category label>", "fallback_used": false, "profile_logged": true}
+```
 
-- `ChallengeCategory`: `fundraising`, `hiring`, `go_to_market`, `product`,
-  `pivot_strategy`, `legal_cap_table`, `leadership_team`, `other`
-- `Stage`: `idea`, `pre_seed`, `seed`, `series_a_plus`. Intro labels, with
-  article: "an idea-stage", "a pre-seed", "a seed-stage", "a Series A or
-  later".
+No `draft_intro`. The host then answers on its own and can suggest the
+founder contact FUTURY directly.
+
+Recommendation log: after matching, `find_mentor` appends
+`{type: "recommendation", timestamp, challenge_category, stage, mentor_id,
+mentor_name}` to `profile.json`. `stage` is the resolved stage (§6) or `null`
+when unknown; `mentor_id` and `mentor_name` are `null` on a no-match. Every
+result, match or not, carries `profile_logged` (`true` when the append
+succeeded). When `find_mentor` returns a tool error (missing or malformed
+mentor file, invalid input), no recommendation entry is written. If the append fails
+(malformed or unwritable profile), the match is still returned with
+`profile_logged: false` and `profile_error` naming the file; a logging failure
+never hides a recommendation.
+
+### 5.3 `list_mentors` (Awareness)
+
+Purpose: let the founder see who exists. The tool description tells the host
+to call it when the founder asks which mentors are available or what they
+cover.
+
+Input: `challenge_category` (enum, optional) to filter.
+
+Output: `{"mentors": [{id, name, focus, categories, stages, contact}]}` in
+file order, filtered when a category is given; an empty list when nobody
+matches. Read-only; nothing is logged.
+
+### 5.4 Report (`npm run report`)
+
+`npm run report` runs `node dist/report.js`, so `npm run build` comes first
+(same as the server). It honours `FUTURY_HOME`. It prints plain text the
+founder can paste to the builder, in this order:
+
+1. `Interactions: <n>` (count of `interaction` entries).
+2. `Recommendations: <n> (no match: <m>)` (count of `recommendation`
+   entries; `m` = those with `mentor_id: null`).
+3. `Mentors recommended:` one line per mentor, `<name>: <count>`, highest
+   count first, ties by name.
+4. `Topics:` one line per category label, `<label>: <count>`, counting
+   `interaction.topic` only (one per logged question; recommendations are
+   already counted above), highest count first, ties by label.
+
+A section with nothing to list prints `none` (e.g. `Mentors recommended: none`).
+
+Missing profile: prints "No profile yet" and exits 0. Malformed profile (see
+§7): prints the path and exits 1; the file is not changed.
+
+### 5.5 Enums and labels
+
+`ChallengeCategory` and its plain label (used in `draft_intro`, `reason` and
+the report):
+
+| Value | Label |
+|---|---|
+| `fundraising` | fundraising |
+| `hiring` | hiring |
+| `go_to_market` | go-to-market |
+| `product` | product decisions |
+| `pivot_strategy` | a possible pivot |
+| `legal_cap_table` | legal and cap table questions |
+| `leadership_team` | leadership and team questions |
+| `other` | a question outside the usual topics |
+
+`Stage` and its label with article: `idea` "an idea-stage", `pre_seed`
+"a pre-seed", `seed` "a seed-stage", `series_a_plus` "a Series A or later".
 
 ## 6. Matching
 
@@ -156,14 +228,23 @@ Deterministic scoring over the mentor list:
 - +1 if the mentor's `stages` contain the stage (when a stage is known)
 - A mentor with no category match is never returned.
 - Highest score wins; ties go to the first mentor in file order.
-- `fallback_used: true` when the stage did not match and the mentor was
-  chosen on category alone.
+- `fallback_used` is `true` only when a stage is known and the chosen mentor
+  does not cover it; `false` when the stage matches or is unknown.
 
-`reason` is built from the mentor's `focus` field and which criteria matched.
+Stage resolution: the `stage` input if given; otherwise the latest
+`stage_hint` among `interaction` entries in the profile; otherwise unknown.
+A missing or malformed profile means unknown; matching continues.
+
+`reason` format: `"<category label>, <stage label without article>: <focus>"`
+when the stage is known and matched, `"<category label>: <focus>"`
+otherwise. Example: `"fundraising, seed-stage: Led two Series A rounds in deep tech"`.
 
 ## 7. Data
 
-`mentors.json` (shipped in the repo, path overridable with `FUTURY_MENTORS_PATH`):
+`mentors.json` ships in the repo at `data/mentors.json`. The default path is
+resolved from the package root via `import.meta.url`, never from the working
+directory (clients start stdio servers in arbitrary directories).
+`FUTURY_MENTORS_PATH` overrides it.
 
 ```json
 [{"id": "m-001", "name": "Invented Name", "focus": "one line",
@@ -171,23 +252,52 @@ Deterministic scoring over the mentor list:
   "contact": {"email": "mentor@example.org", "booking_url": "https://example.org/book"}}]
 ```
 
+Mentor file rules (anything else is a schema violation):
+
+- Top level is an array (may be empty).
+- `id`: non-empty string, unique across the file.
+- `name`, `focus`: non-empty strings.
+- `categories`: non-empty array of `ChallengeCategory` values.
+- `stages`: array of `Stage` values; empty means the mentor covers no stage
+  (still matchable on category).
+- `contact.email`: required, string. `contact.booking_url`: optional string.
+
 All mentors in the shipped file are invented. Contact data uses `example.org`.
 For a real founder test, `FUTURY_MENTORS_PATH` points at a roster of mentors
 who agreed to be listed, saved outside the clone; it never enters the repo
 (`.gitignore` also excludes `mentors.local.json` as a backstop).
 
-`profile.json` lives in `FUTURY_HOME` (default `~/.futury/`), never in the
-repo. It stays on the founder's machine; the server sends it nowhere.
+`profile.json` lives in `FUTURY_HOME` (default: `path.join(os.homedir(),
+".futury")`), never in the repo. It stays on the founder's machine; the
+server sends it nowhere. Shape: a JSON array of entries, each either
+`{type: "interaction", ...}` (§5.1) or `{type: "recommendation", ...}` (§5.2).
+Malformed means: invalid JSON, a top level that is not an array, or an entry
+that fails its schema.
+
+Writes are read, append, write to a temp file in the same directory, then
+rename. Two sessions writing at the same moment (Claude Code and Desktop) can
+lose one entry; last write wins, and that is accepted for v1.
 
 ## 8. Error handling
 
-- Invalid tool input: rejected by schema validation, returned as an MCP tool
-  error naming the field.
-- Missing or malformed `mentors.json`: `find_mentor` returns a tool error with
-  the path; `log_interaction` keeps working.
-- Malformed `profile.json`: tool error naming the file; the server does not
-  overwrite or repair it, so no founder data is lost.
+- Invalid tool input: tools are registered with their real zod schemas,
+  enums as `z.enum`, so the schema advertised to the host model lists every
+  allowed `ChallengeCategory` and `Stage` value. The MCP SDK version is pinned
+  in `package.json`. An integration test checks that an invalid call comes
+  back as a tool result with `isError: true` naming the field. If the pinned
+  SDK instead returns a protocol error, the fields are registered as
+  `z.unknown()` with the allowed values listed in each field's
+  `.describe()` text, and each handler parses strictly and returns
+  `isError: true` itself. Either way, the advertised schema or description
+  contains the enum values (also covered by a test).
+- Missing or malformed `mentors.json`: `find_mentor` and `list_mentors` return
+  a tool error with the path; `log_interaction` keeps working.
+- Malformed `profile.json`: `log_interaction` returns a tool error naming the
+  file. `find_mentor` still returns its match with `profile_logged: false`
+  and `profile_error` (§5.2). The server never overwrites or repairs it, so
+  no founder data is lost.
 - Missing `FUTURY_HOME`: created on the first write.
+- The server writes logs to stderr only; stdout carries the MCP protocol.
 
 ## 9. gstack pairing (documentation, no code)
 
@@ -204,17 +314,36 @@ On non-Claude-Code clients only the Futury half is available.
 
 ## 10. Testing
 
-- Matcher: unit tests for category match, stage tie-break, fallback, no match.
-- ProfileStore: append, latest-stage lookup, malformed file is left untouched.
-- MentorDirectory: valid file, missing file, schema violation.
+- Matcher: unit tests for category match, stage tie-break, fallback (stage
+  known and unmatched), unknown stage (`fallback_used: false`), no match,
+  `reason` format.
+- ProfileStore: append, `FUTURY_HOME` created on first write, latest-stage
+  lookup from `interaction` entries only,
+  malformed file (each malformed case in §7) is left untouched.
+- MentorDirectory: valid file, empty array, missing file, each schema rule in
+  §7, default path resolved independent of the working directory.
 - Server: integration test with the SDK's in-memory client/server transport,
-  calling both tools end to end against a temp `FUTURY_HOME` and a fixture
-  mentor file.
+  calling all three tools end to end against a temp `FUTURY_HOME` and a
+  fixture mentor file; invalid input returns `isError: true`; the listed
+  tool schemas or descriptions contain every `ChallengeCategory` and `Stage`
+  value;
+  `log_interaction` works with a missing mentor file; `log_interaction`
+  returns a tool error on a malformed profile; `find_mentor` returns a tool
+  error on a missing or malformed mentor file; `find_mentor` uses the
+  profile's stage when none is given.
 - Draft intro: present only with a mentor; correct with and without `notes`
   and stage.
+- Recommendation log: match and no-match both appended; malformed profile
+  and unwritable profile both still return the match with
+  `profile_logged: false` and `profile_error`.
+- list_mentors: full list, category filter, empty result, missing mentor
+  file returns a tool error.
+- Report: summary of a fixture profile; missing profile; malformed profile
+  exits 1 and leaves the file unchanged.
 - Manual: in Claude Code and Claude Desktop, ask 10 questions (5 generic, 5
   mentor-worthy). At most 1 of 10 may be handled wrongly; more means rewording
-  the tool descriptions.
+  the tool descriptions. Then ask "which mentors are there?" and check that
+  `list_mentors` is called.
 
 All fixtures are invented.
 
@@ -230,3 +359,6 @@ All fixtures are invented.
 - Extension loader for local, uncommitted capability modules, and a
   `self_serve_alternative` field on `find_mentor`.
 - Auto-notifying mentors or booking calendar slots.
+- Deferred in the CEO review, tracked in `TODOS.md`: gap feedback on a
+  no-match, a "(found via Futury)" line in `draft_intro`, a German draft
+  intro.
