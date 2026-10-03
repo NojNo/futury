@@ -44,7 +44,7 @@ OpenAI clients, CLI agents). v1 ships the first capability only:
 | Licence | MIT, open source. |
 | Language | TypeScript on the official MCP TypeScript SDK, tests in Vitest. Runtime Node 24 LTS; CI also runs Node 22 (Node 20 reached end of life in April 2026). |
 | Install | Clone, `npm install`, `npm run build`, then `claude mcp add` or the Claude Desktop JSON config. No npm publishing, no `.mcpb` bundle in v1. The README gives absolute paths for both `node` and `dist/server.js`, because Claude Desktop does not load the shell's PATH (a common failure with nvm). |
-| Test group | Technical founders. The `.mcpb` bundle is built when a non-technical founder is to install v1 without the builder present; a setup the builder does in person does not trigger it (see `docs/designs/founder-mentor-escalation.md`). |
+| Test group | Technical founders. The `.mcpb` bundle is built when a non-technical founder is to install v1 without the builder present; a setup the builder does in person does not trigger it. |
 
 Why MCP and not a Claude Code skill: a skill runs only inside Claude Code and
 has no runtime of its own to hold OAuth tokens or a database connection. The
@@ -279,9 +279,11 @@ otherwise. Example: `"fundraising, seed-stage: Led two Series A rounds in deep t
 resolved from the package root via `import.meta.url`, never from the working
 directory (clients start stdio servers in arbitrary directories).
 `FUTURY_MENTORS_PATH` overrides it. `FUTURY_MENTORS_PATH` and `FUTURY_HOME`
-must be absolute paths; a relative value is rejected with a tool error naming
-the variable, since it would resolve against an unpredictable working
-directory. The mentor file is read on every `find_mentor` and `list_mentors`
+must be absolute paths; a relative value is an error naming the variable,
+since it would resolve against an unpredictable working directory. Tools
+that need the file return a tool error, except `find_mentor`, which still
+returns its candidates and reports the problem via `profile_logged`/
+`profile_error` instead (§5.2). The mentor file is read on every `find_mentor` and `list_mentors`
 call, not cached, so a roster swap takes effect without restarting the
 client.
 

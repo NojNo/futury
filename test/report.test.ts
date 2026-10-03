@@ -46,6 +46,41 @@ describe("summarize", () => {
       ["Interactions: 0", "Recommendations: 0 (no match: 0)", "Mentors suggested: none", "Topics: none"].join("\n"),
     );
   });
+
+  it("breaks ties by name/label, not file order (§5.4)", () => {
+    const tied: ProfileEntry[] = [
+      { type: "interaction", v: 1, timestamp: ts, question: "q1", topic: "hiring" },
+      { type: "interaction", v: 1, timestamp: ts, question: "q2", topic: "fundraising" },
+      {
+        type: "recommendation",
+        v: 1,
+        timestamp: ts,
+        challenge_category: "other",
+        stage: null,
+        candidates: [{ mentor_id: "m-zoe", mentor_name: "Zoe Example" }],
+      },
+      {
+        type: "recommendation",
+        v: 1,
+        timestamp: ts,
+        challenge_category: "other",
+        stage: null,
+        candidates: [{ mentor_id: "m-anna", mentor_name: "Anna Example" }],
+      },
+    ];
+    expect(summarize(tied)).toBe(
+      [
+        "Interactions: 2",
+        "Recommendations: 2 (no match: 0)",
+        "Mentors suggested:",
+        "  Anna Example: 1",
+        "  Zoe Example: 1",
+        "Topics:",
+        "  fundraising: 1",
+        "  hiring: 1",
+      ].join("\n"),
+    );
+  });
 });
 
 describe("runReport", () => {

@@ -215,7 +215,9 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main().catch((error: unknown) => {
-    process.stderr.write(`futury: fatal ${error instanceof Error ? error.name : "Error"}\n`);
+    const name = error instanceof Error ? error.name : "Error";
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`futury: fatal ${name}: ${message}\n`);
     process.exit(1);
   });
 }

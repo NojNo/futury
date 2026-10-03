@@ -35,7 +35,16 @@ pwd          # note this absolute path
 ### Claude Code
 
 ```bash
-claude mcp add futury -- "$(which node)" "$(pwd)/dist/server.js"
+claude mcp add --scope user futury -- "$(which node)" "$(pwd)/dist/server.js"
+```
+
+`--scope user` registers Futury once for your user, so it is available in
+every project, not just sessions started from this folder. Options (like
+`--scope` or `-e` for environment variables) go before the server name and
+`--`, for example:
+
+```bash
+claude mcp add --scope user -e FUTURY_MENTORS_PATH=/ABSOLUTE/PATH/roster.json futury -- "$(which node)" "$(pwd)/dist/server.js"
 ```
 
 ### Claude Desktop
@@ -94,7 +103,8 @@ The repo only ships invented mentors (`data/mentors.json`). For a real
 roster, get the JSON file from your program, save it **outside** this folder,
 and set `FUTURY_MENTORS_PATH` to its absolute path in your client config
 (`"env": { "FUTURY_MENTORS_PATH": "/ABSOLUTE/PATH/roster.json" }` in Claude
-Desktop, `-e FUTURY_MENTORS_PATH=...` with `claude mcp add`). The file is
+Desktop, `claude mcp add --scope user -e FUTURY_MENTORS_PATH=/ABSOLUTE/PATH/roster.json futury -- ...`
+in Claude Code). The file is
 re-read on every call, so edits apply without a restart. Every listed mentor
 must have agreed to be listed and to receive AI-drafted intros.
 
