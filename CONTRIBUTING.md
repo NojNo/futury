@@ -42,8 +42,12 @@ merge stay with the maintainer.
    For first-time contributors a maintainer starts the checks by hand.
 4. The maintainer reviews. Every change needs the maintainer's approval
    (`.github/CODEOWNERS`) and all review threads must be resolved.
-5. The maintainer squash-merges. `main` accepts no direct pushes and keeps a
-   linear history; your branch is deleted after the merge.
+5. The maintainer merges with a merge commit, so all your commits keep their
+   history on `main` and the merge commit marks the pull request. `main`
+   accepts no direct pushes; your branch is deleted after the merge.
+
+Because every commit lands on `main`, keep commits meaningful: one logical
+step each, with a clear message (e.g. `feat: ...`, `fix: ...`, `docs: ...`).
 
 Bugs and ideas are welcome as issues first, especially for changes to a tool's
 inputs or outputs.
