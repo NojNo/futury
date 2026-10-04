@@ -18,54 +18,30 @@ your own machine.
 Your AI client answers small questions itself; Futury only adds the mentor
 recommendation and the local log.
 
-## Install (Claude Code or Claude Desktop)
+## Install
 
-Prerequisites: Node.js 24 (22 also works), git, and Claude Code or Claude
-Desktop.
+Requires Node.js 24 (22 also works).
 
 ```bash
 git clone https://github.com/NojNo/futury.git
 cd futury
 npm install
 npm run build
-which node   # note this absolute path
-pwd          # note this absolute path
 ```
 
-### Claude Code
+Register it as a local (stdio) MCP server that runs `node dist/server.js`,
+using absolute paths for both `node` and `dist/server.js`.
 
-```bash
-claude mcp add --scope user futury -- "$(which node)" "$(pwd)/dist/server.js"
-```
+- **Claude Code** ([MCP docs](https://code.claude.com/docs/en/mcp)):
+  `claude mcp add --scope user futury -- "$(which node)" "$(pwd)/dist/server.js"`
+  (`--scope user` makes it available in all your projects).
+- **Claude Desktop**: add it to the app's MCP config as described in
+  [Connect to local MCP servers](https://modelcontextprotocol.io/docs/develop/connect-local-servers),
+  then restart the app.
 
-`--scope user` registers Futury once for your user, so it is available in
-every project, not just sessions started from this folder. Options (like
-`--scope` or `-e` for environment variables) go before the server name and
-`--`, for example:
-
-```bash
-claude mcp add --scope user -e FUTURY_MENTORS_PATH=/ABSOLUTE/PATH/roster.json futury -- "$(which node)" "$(pwd)/dist/server.js"
-```
-
-### Claude Desktop
-
-Claude Desktop does not load your shell's PATH, so use absolute paths for both
-`node` and `dist/server.js`. Edit
-`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or
-`%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
-```json
-{
-  "mcpServers": {
-    "futury": {
-      "command": "/ABSOLUTE/PATH/TO/node",
-      "args": ["/ABSOLUTE/PATH/TO/futury/dist/server.js"]
-    }
-  }
-}
-```
-
-Restart Claude Desktop afterwards.
+Optional environment variables, both absolute paths: `FUTURY_HOME` (profile
+folder, default `~/.futury`) and `FUTURY_MENTORS_PATH` (mentor roster, default
+the demo roster).
 
 ## Recommended instructions for your AI client
 
@@ -81,34 +57,26 @@ Paste this into your `CLAUDE.md` (Claude Code) or your Project instructions
 - If I ask which mentors exist, call list_mentors.
 ```
 
-[gstack](https://github.com/garrytan/gstack) (MIT) is an optional companion
-for Claude Code that acts as an engineering team; Futury does not depend on it.
+[gstack](https://github.com/garrytan/gstack) is an optional companion for
+Claude Code; Futury does not depend on it.
 
 ## Your data
 
-- The profile lives in `~/.futury/profile.json` (folder mode 0700, file mode
-  0600). Change the folder with `FUTURY_HOME` (must be an absolute path).
+- The profile is `profile.json` in `FUTURY_HOME` (folder mode 0700, file mode
+  0600). `npm run report` summarises it.
 - Futury sends nothing anywhere. Tool inputs and outputs do pass through your
-  AI provider (Claude) under its terms.
+  AI provider under its terms.
 - Logging is best-effort: your AI client decides when to call
   `log_interaction`, so a question can be missed or logged twice.
 
-```bash
-npm run report
-```
-
 ## Using a real mentor roster
 
-The repo only ships invented mentors (`data/mentors.json`). For a real
-roster, get the JSON file from your program, save it **outside** this folder,
-and set `FUTURY_MENTORS_PATH` to its absolute path in your client config
-(`"env": { "FUTURY_MENTORS_PATH": "/ABSOLUTE/PATH/roster.json" }` in Claude
-Desktop, `claude mcp add --scope user -e FUTURY_MENTORS_PATH=/ABSOLUTE/PATH/roster.json futury -- ...`
-in Claude Code). The file is
-re-read on every call, so edits apply without a restart. Every listed mentor
-must have agreed to be listed and to receive AI-drafted intros.
+The repo only ships invented mentors (`data/mentors.json`). Save a real roster
+**outside** this folder and point `FUTURY_MENTORS_PATH` at it. It is re-read on
+every call. Every listed mentor must have agreed to be listed and to receive
+AI-drafted intros.
 
-Roster format: an array of
+Format: an array of
 `{ "id", "name", "focus", "categories": [...], "stages": [...], "contact": { "email", "booking_url"? } }`.
 Categories: `fundraising`, `hiring`, `go_to_market`, `product`,
 `pivot_strategy`, `legal_cap_table`, `leadership_team`, `other`. Stages:
@@ -116,26 +84,19 @@ Categories: `fundraising`, `hiring`, `go_to_market`, `product`,
 
 ## Troubleshooting
 
-- **Tools don't appear in Claude Desktop:** check that both paths in the
-  config are absolute and that `node --version` at that path is 22 or later.
-- **Wrong or no mentors:** the server logs one startup line,
-  `futury <version> home=<path> mentors=<path>`, to the client's MCP log
-  (Claude Desktop on macOS: `~/Library/Logs/Claude/mcp-server-futury.log`).
-  Check the `mentors=` path.
-- **"must be an absolute path":** `FUTURY_HOME` or `FUTURY_MENTORS_PATH` is
-  relative; use a full path.
-- **"Profile file ...: malformed entries":** the profile was edited by hand or
+On start the server logs `futury <version> home=<path> mentors=<path>` to
+stderr, which your client writes to its MCP log (see
+[Debugging](https://modelcontextprotocol.io/docs/tools/debugging)). Check
+those paths first.
+
+- **"must be an absolute path"**: `FUTURY_HOME` or `FUTURY_MENTORS_PATH` is
+  relative.
+- **"Profile file ...: malformed entries"**: the profile was edited by hand or
   by another version. Futury never overwrites it; fix or move the file.
 
-## Development
+## Contributing
 
-```bash
-npm run typecheck
-npm test          # builds, then runs Vitest including a stdio smoke test
-```
-
-Contributions are welcome. Commits must be signed off (`git commit -s`, DCO);
-see `CONTRIBUTING.md`. Report security issues privately, see `SECURITY.md`.
+See `CONTRIBUTING.md` (commits are signed off, DCO) and `SECURITY.md`.
 
 ## Licence
 
