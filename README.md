@@ -98,3 +98,5 @@ See `CONTRIBUTING.md` (commits are signed off, DCO) and `SECURITY.md`.
 ## Licence
 
 Apache License 2.0, see `LICENSE` and `NOTICE`.
+
+This project is independent and not an official FUTURY product.
