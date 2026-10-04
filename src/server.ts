@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { ConfigError, MentorFileError, ProfileFileError } from "./errors.js";
+import { ConfigError, FuturyError } from "./errors.js";
 import { buildIntro } from "./intro.js";
 import {
   CATEGORY_LABELS,
@@ -56,15 +56,10 @@ type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean
 const ok = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
 const fail = (text: string): ToolResult => ({ isError: true, content: [{ type: "text", text }] });
 
-function where(error: unknown): string {
-  if (error instanceof ConfigError) return error.variable;
-  if (error instanceof MentorFileError || error instanceof ProfileFileError) return error.path;
-  return "";
-}
-
 function logLine(tool: string, error: unknown): string {
   const name = error instanceof Error ? error.name : "UnknownError";
-  return `futury: ${tool} ${name} ${where(error)}`.trimEnd();
+  const location = error instanceof FuturyError ? error.location : "";
+  return `futury: ${tool} ${name} ${location}`.trimEnd();
 }
 
 async function guard(tool: string, log: (line: string) => void, run: () => Promise<ToolResult>): Promise<ToolResult> {
@@ -72,10 +67,7 @@ async function guard(tool: string, log: (line: string) => void, run: () => Promi
     return await run();
   } catch (error) {
     log(logLine(tool, error));
-    if (error instanceof ConfigError || error instanceof MentorFileError || error instanceof ProfileFileError) {
-      return fail(error.message);
-    }
-    return fail(`internal error in ${tool}`);
+    return fail(error instanceof FuturyError ? error.message : `internal error in ${tool}`);
   }
 }
 
@@ -122,15 +114,15 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     },
     (args) =>
       guard("find_mentor", log, async () => {
-        const mentors = await loadMentors(resolveMentorsPath(env));
-        let stage: Stage | null = args.stage ?? null;
-        if (stage === null) {
+        const resolveStage = async (): Promise<Stage | null> => {
+          if (args.stage !== undefined) return args.stage;
           try {
-            stage = await profile().latestStage();
+            return await profile().latestStage();
           } catch {
-            stage = null;
+            return null;
           }
-        }
+        };
+        const [mentors, stage] = await Promise.all([loadMentors(resolveMentorsPath(env)), resolveStage()]);
         const matches = matchMentors(args.challenge_category, stage, mentors);
         const candidates = matches.map((c) => ({
           mentor: { id: c.mentor.id, name: c.mentor.name, focus: c.mentor.focus, contact: c.mentor.contact },

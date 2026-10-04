@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { readFile } from "node:fs/promises";
-import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { ConfigError, MentorFileError } from "./errors.js";
+import { absolutePathFromEnv, errorCode, MentorFileError } from "./errors.js";
 import { ChallengeCategorySchema, StageSchema } from "./labels.js";
 
 export const MentorSchema = z.object({
@@ -33,10 +32,7 @@ export function defaultMentorsPath(): string {
 }
 
 export function resolveMentorsPath(env: NodeJS.ProcessEnv = process.env): string {
-  const value = env.FUTURY_MENTORS_PATH;
-  if (value === undefined || value === "") return defaultMentorsPath();
-  if (!isAbsolute(value)) throw new ConfigError("FUTURY_MENTORS_PATH");
-  return value;
+  return absolutePathFromEnv(env, "FUTURY_MENTORS_PATH", defaultMentorsPath);
 }
 
 export async function loadMentors(path: string): Promise<Mentor[]> {
@@ -44,7 +40,7 @@ export async function loadMentors(path: string): Promise<Mentor[]> {
   try {
     raw = await readFile(path, "utf8");
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "unknown";
+    const code = errorCode(error);
     throw new MentorFileError(path, code === "ENOENT" ? "not found" : `cannot read (${code})`);
   }
   let data: unknown;

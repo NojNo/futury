@@ -2,9 +2,9 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
-import { ConfigError, ProfileFileError } from "./errors.js";
+import { absolutePathFromEnv, errorCode, ProfileFileError } from "./errors.js";
 import {
   ChallengeCategorySchema,
   MAX_FACT,
@@ -15,13 +15,15 @@ import {
   type Stage,
 } from "./labels.js";
 
-const Timestamp = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: "invalid timestamp" });
+const EntryBase = {
+  v: z.literal(1),
+  timestamp: z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: "invalid timestamp" }),
+};
 
 export const InteractionEntrySchema = z
   .object({
     type: z.literal("interaction"),
-    v: z.literal(1),
-    timestamp: Timestamp,
+    ...EntryBase,
     question: z.string().max(MAX_TEXT),
     topic: ChallengeCategorySchema,
     stage_hint: StageSchema.optional(),
@@ -32,8 +34,7 @@ export const InteractionEntrySchema = z
 export const RecommendationEntrySchema = z
   .object({
     type: z.literal("recommendation"),
-    v: z.literal(1),
-    timestamp: Timestamp,
+    ...EntryBase,
     challenge_category: ChallengeCategorySchema,
     stage: StageSchema.nullable(),
     candidates: z.array(z.object({ mentor_id: z.string(), mentor_name: z.string() }).passthrough()).max(3),
@@ -59,13 +60,8 @@ export interface RecommendationInput {
 }
 
 export function resolveFuturyHome(env: NodeJS.ProcessEnv = process.env): string {
-  const value = env.FUTURY_HOME;
-  if (value === undefined || value === "") return join(homedir(), ".futury");
-  if (!isAbsolute(value)) throw new ConfigError("FUTURY_HOME");
-  return value;
+  return absolutePathFromEnv(env, "FUTURY_HOME", () => join(homedir(), ".futury"));
 }
-
-const errorCode = (error: unknown): string => (error as NodeJS.ErrnoException).code ?? "unknown";
 
 // One write queue per profile path, shared by every ProfileStore in this process.
 const queues = new Map<string, Promise<unknown>>();

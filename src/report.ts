@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { ConfigError, ProfileFileError } from "./errors.js";
+import { FuturyError } from "./errors.js";
 import { CATEGORY_LABELS } from "./labels.js";
 import { ProfileStore, resolveFuturyHome, type ProfileEntry } from "./profile.js";
 
@@ -50,7 +50,7 @@ export async function runReport(env: NodeJS.ProcessEnv, out: (text: string) => v
     out(summarize(entries));
     return 0;
   } catch (error) {
-    if (error instanceof ConfigError || error instanceof ProfileFileError) {
+    if (error instanceof FuturyError) {
       out(error.message);
       return 1;
     }
