@@ -134,6 +134,9 @@ npm run typecheck
 npm test          # builds, then runs Vitest including a stdio smoke test
 ```
 
+Contributions are welcome. Commits must be signed off (`git commit -s`, DCO);
+see `CONTRIBUTING.md`. Report security issues privately, see `SECURITY.md`.
+
 ## Licence
 
 Apache License 2.0, see `LICENSE` and `NOTICE`.
