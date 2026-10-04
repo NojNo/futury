@@ -79,19 +79,6 @@ Claude Code; Futury does not depend on it.
 - Logging is best-effort: your AI client decides when to call
   `log_interaction`, so a question can be missed or logged twice.
 
-## Using a real mentor roster
-
-The repo only ships invented mentors (`data/mentors.json`). Save a real roster
-**outside** this folder and point `FUTURY_MENTORS_PATH` at it. It is re-read on
-every call. Every listed mentor must have agreed to be listed and to receive
-AI-drafted intros.
-
-Format: an array of
-`{ "id", "name", "focus", "categories": [...], "stages": [...], "contact": { "email", "booking_url"? } }`.
-Categories: `fundraising`, `hiring`, `go_to_market`, `product`,
-`pivot_strategy`, `legal_cap_table`, `leadership_team`, `other`. Stages:
-`idea`, `pre_seed`, `seed`, `series_a_plus`.
-
 ## Troubleshooting
 
 On start the server logs `futury <version> home=<path> mentors=<path>` to
