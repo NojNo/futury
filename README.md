@@ -136,4 +136,4 @@ npm test          # builds, then runs Vitest including a stdio smoke test
 
 ## Licence
 
-MIT, see `LICENSE`.
+Apache License 2.0, see `LICENSE` and `NOTICE`.

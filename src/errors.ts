@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 export class ConfigError extends Error {
   constructor(readonly variable: string) {
     super(`${variable} must be an absolute path`);

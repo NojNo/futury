@@ -28,7 +28,7 @@ OpenAI clients, CLI agents). v1 ships the first capability only:
 - Each substantive interaction is stored in a local profile, so the profile
   shows how the founder's stage and topics change over time.
 - The repository contains no proprietary dependency and is publishable under
-  MIT.
+  Apache-2.0.
 
 ## 3. Decisions
 
@@ -41,7 +41,7 @@ OpenAI clients, CLI agents). v1 ships the first capability only:
 | Escalation action | Recommend a mentor + contact info + one-line reason + draft intro. No auto-notify, no booking. |
 | Guidance | Produced by the host model, never by the server. |
 | Profile building | Host model fills a structured schema; server only stores it. No server-side LLM. |
-| Licence | MIT, open source. |
+| Licence | Apache-2.0 (explicit patent grant; chosen 2026-10-04 while the project still had a single author). `NOTICE` carries the copyright line. |
 | Language | TypeScript on the official MCP TypeScript SDK, tests in Vitest. Runtime Node 24 LTS; CI also runs Node 22 (Node 20 reached end of life in April 2026). |
 | Install | Clone, `npm install`, `npm run build`, then `claude mcp add` or the Claude Desktop JSON config. No npm publishing, no `.mcpb` bundle in v1. The README gives absolute paths for both `node` and `dist/server.js`, because Claude Desktop does not load the shell's PATH (a common failure with nvm). |
 | Test group | Technical founders. The `.mcpb` bundle is built when a non-technical founder is to install v1 without the builder present; a setup the builder does in person does not trigger it. |

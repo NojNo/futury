@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { CATEGORY_LABELS, STAGE_LABELS, type ChallengeCategory, type Stage } from "./labels.js";
 
 export interface MatchableMentor {
