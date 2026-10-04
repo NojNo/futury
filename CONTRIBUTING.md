@@ -33,6 +33,21 @@ git push --force-with-lease
 The sign-off is about where the code comes from. Review and the decision to
 merge stay with the maintainer.
 
+## How a change gets merged
+
+1. Fork the repository and work on a branch in your fork.
+2. Open a pull request against `main`. Keep it to one change; describe what
+   and why, and how you tested it.
+3. Checks run automatically: tests on Node 22 and 24, and the DCO sign-off.
+   For first-time contributors a maintainer starts the checks by hand.
+4. The maintainer reviews. Every change needs the maintainer's approval
+   (`.github/CODEOWNERS`) and all review threads must be resolved.
+5. The maintainer squash-merges. `main` accepts no direct pushes and keeps a
+   linear history; your branch is deleted after the merge.
+
+Bugs and ideas are welcome as issues first, especially for changes to a tool's
+inputs or outputs.
+
 ## Development
 
 Node.js 24 (22 also works).
