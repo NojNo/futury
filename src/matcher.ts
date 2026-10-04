@@ -29,11 +29,8 @@ export function matchMentors<M extends MatchableMentor>(
 ): Candidate<M>[] {
   return mentors
     .filter((m) => m.categories.includes(category))
-    .map((m) => {
-      const stageMatch = stage !== null && m.stages.includes(stage);
-      return { m, stageMatch, score: 2 + (stageMatch ? 1 : 0) };
-    })
-    .sort((a, b) => b.score - a.score) // Array.prototype.sort is stable: ties keep file order
+    .map((m) => ({ m, stageMatch: stage !== null && m.stages.includes(stage) }))
+    .sort((a, b) => Number(b.stageMatch) - Number(a.stageMatch)) // stable sort: ties keep file order
     .slice(0, SHORTLIST_SIZE)
     .map(({ m, stageMatch }) => ({
       mentor: m,
