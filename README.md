@@ -41,7 +41,14 @@ using absolute paths for both `node` and `dist/server.js`.
 
 Optional environment variables, both absolute paths: `FUTURY_HOME` (profile
 folder, default `~/.futury`) and `FUTURY_MENTORS_PATH` (mentor roster, default
-the demo roster).
+the demo roster). Pass them to the server, e.g. in Claude Code:
+
+```bash
+claude mcp add --scope user -e FUTURY_HOME=/abs/path/.futury -e FUTURY_MENTORS_PATH=/abs/path/roster.json \
+  futury -- "$(which node)" "$(pwd)/dist/server.js"
+```
+
+In Claude Desktop, add the same keys under `"env"` in the server's config entry.
 
 ## Recommended instructions for your AI client
 
@@ -63,7 +70,10 @@ Claude Code; Futury does not depend on it.
 ## Your data
 
 - The profile is `profile.json` in `FUTURY_HOME` (folder mode 0700, file mode
-  0600). `npm run report` summarises it.
+  0600). `npm run report` summarises it; if you set `FUTURY_HOME` for the
+  server, set the same value for the report (`FUTURY_HOME=... npm run report`).
+- Use one AI client at a time: two clients writing at the same moment (e.g.
+  Claude Code and Claude Desktop) can lose a log entry.
 - Futury sends nothing anywhere. Tool inputs and outputs do pass through your
   AI provider under its terms.
 - Logging is best-effort: your AI client decides when to call
