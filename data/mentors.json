@@ -1,0 +1,26 @@
+[
+  {
+    "id": "m-001",
+    "name": "Mara Lindqvist",
+    "focus": "Built and sold a B2B SaaS company; raised from pre-seed to Series A",
+    "categories": ["fundraising", "go_to_market", "product", "pivot_strategy"],
+    "stages": ["idea", "pre_seed", "seed"],
+    "contact": { "email": "mara@example.org", "booking_url": "https://example.org/book/mara" }
+  },
+  {
+    "id": "m-002",
+    "name": "Jonas Albrecht",
+    "focus": "Startup lawyer for financing rounds, cap tables, ESOPs and employment contracts",
+    "categories": ["legal_cap_table", "fundraising", "hiring"],
+    "stages": ["pre_seed", "seed", "series_a_plus"],
+    "contact": { "email": "jonas@example.org", "booking_url": "https://example.org/book/jonas" }
+  },
+  {
+    "id": "m-003",
+    "name": "Helena Brandt",
+    "focus": "Long-time CEO of a large industrial company: industry knowledge, management, leadership and corporate sales",
+    "categories": ["leadership_team", "hiring", "go_to_market", "other"],
+    "stages": ["seed", "series_a_plus"],
+    "contact": { "email": "helena@example.org", "booking_url": "https://example.org/book/helena" }
+  }
+]

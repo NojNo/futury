@@ -40,6 +40,10 @@ node_modules/
 .claude/skills/gstack/
 .gbrain-source
 
+# Build output and private rosters
+dist/
+mentors.local.json
+
 # --- Local-only scaffold and agent files -------------------------------------
 # This repo is PUBLIC. These paths are plugbase scaffolding and agent config
 # and must never be tracked. Add a path here BEFORE creating anything internal.
